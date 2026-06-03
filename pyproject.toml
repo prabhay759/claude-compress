@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-compress"
+version = "0.1.0"
+description = "Context compression for Claude Code — reduces tokens via PreToolUse hooks"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+claude-compress = "claude_compress.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["claude_compress*"]
