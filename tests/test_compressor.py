@@ -149,10 +149,14 @@ def test_git_context_folded():
 
 # ── Truncation ────────────────────────────────────────────────────────────
 
-def test_large_output_truncated():
+def test_large_output_truncated(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_COMPRESS_DIR", str(tmp_path))
+    import importlib, claude_compress.store as s, claude_compress.compressor as c
+    importlib.reload(s)
+    importlib.reload(c)
     # Use varied lines so RLE doesn't collapse them before the line-count check
     big = "".join(f"line-{i}\n" for i in range(600))
-    result = compress(big, "ls")
+    result = c.compress(big, "ls")
     assert "truncated" in result
     assert len(result) < len(big)
 
