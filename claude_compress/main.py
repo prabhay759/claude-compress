@@ -46,6 +46,11 @@ def main() -> None:
     p_stats.add_argument("--hours", type=int, default=24,
                          help="Look-back window in hours (default: 24)")
 
+    # gain
+    p_gain = sub.add_parser("gain", help="One-line token savings summary (good for scripts)")
+    p_gain.add_argument("--hours", type=int, default=24,
+                        help="Look-back window in hours (default: 24)")
+
     # uninstall
     p_uninstall = sub.add_parser("uninstall", help="Remove claude-compress hooks")
     p_uninstall.add_argument("--global", dest="global_scope", action="store_true",
@@ -63,6 +68,8 @@ def main() -> None:
         _cmd_resume()
     elif args.command == "stats":
         _cmd_stats(args)
+    elif args.command == "gain":
+        _cmd_gain(args)
     elif args.command == "uninstall":
         _cmd_uninstall(args)
 
@@ -140,12 +147,23 @@ def _cmd_stats(args) -> None:
     if s["compressions"] == 0:
         print(f"No compressions recorded in the last {args.hours}h.")
         return
-    print(f"Last {args.hours}h compression stats:")
+    bar = _savings_bar(s["reduction_pct"])
+    print(f"\nclaude-compress  —  last {args.hours}h")
+    print(f"  {bar}  {s['reduction_pct']}% reduction")
+    print(f"  Tokens saved : {s['tokens_saved']:,}  ({s['original_tokens']:,} → {s['compressed_tokens']:,})")
     print(f"  Compressions : {s['compressions']}")
-    print(f"  Tokens in    : {s['original_tokens']:,}")
-    print(f"  Tokens out   : {s['compressed_tokens']:,}")
-    print(f"  Tokens saved : {s['tokens_saved']:,}")
-    print(f"  Reduction    : {s['reduction_pct']}%")
+
+
+def _cmd_gain(args) -> None:
+    from . import store
+    s = store.compression_stats(since_hours=args.hours)
+    if s["compressions"] == 0:
+        print("claude-compress: no data yet")
+        return
+    print(
+        f"claude-compress: saved {s['tokens_saved']:,} tokens "
+        f"({s['reduction_pct']}% reduction, {s['compressions']} compressions)"
+    )
 
 
 def _cmd_uninstall(args) -> None:
@@ -156,6 +174,11 @@ def _cmd_uninstall(args) -> None:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
+
+def _savings_bar(pct: float, width: int = 20) -> str:
+    filled = round(pct / 100 * width)
+    return "[" + "█" * filled + "░" * (width - filled) + "]"
+
 
 def _maybe_track_file(cmd: str, output: str) -> None:
     from . import store
