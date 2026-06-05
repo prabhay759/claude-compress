@@ -63,6 +63,15 @@ def test_install_writes_session_start_hook(tmp_path, monkeypatch):
     assert any("resume" in c for c in cmds)
 
 
+def test_install_writes_stop_hook(tmp_path, monkeypatch):
+    path = settings_for(tmp_path, "project", monkeypatch)
+    installer.install("project")
+    data = json.loads(path.read_text())
+    stop = data["hooks"].get("Stop", [])
+    cmds = [h["command"] for e in stop for h in e.get("hooks", [])]
+    assert any("gain" in c for c in cmds)
+
+
 def test_install_idempotent(tmp_path, monkeypatch):
     path = settings_for(tmp_path, "project", monkeypatch)
     installer.install("project")

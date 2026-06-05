@@ -200,10 +200,26 @@ If you install manually, use the full path to `claude-compress.exe` in your `~/.
         { "type": "command",
           "command": "C:\\Users\\you\\AppData\\Roaming\\Python\\Python312\\Scripts\\claude-compress.exe resume" }
       ]}
+    ],
+    "Stop": [
+      { "hooks": [
+        { "type": "command",
+          "command": "C:\\Users\\you\\AppData\\Roaming\\Python\\Python312\\Scripts\\claude-compress.exe gain" }
+      ]}
     ]
   }
 }
 ```
+
+### Session-end savings summary (Stop hook)
+
+`claude-compress init` now also installs a **Stop hook** that prints a one-line savings summary at the end of every Claude Code session:
+
+```
+claude-compress: saved 11,130 tokens (62% reduction, 42 compressions)
+```
+
+No configuration needed — it's included automatically.
 
 ### Session handoff
 
@@ -271,8 +287,8 @@ Complex one-liners and interactive sessions are always passed through unchanged.
 | `claude-compress hook --precompact` | Auto-emit handoff + mark dedup cache stale |
 | `claude-compress compress --cmd NAME` | Compress stdin and print to stdout *(called via pipe)* |
 | `claude-compress resume` | Re-activate dedup cache after SessionStart/compact |
-| `claude-compress stats [--hours N]` | Show token savings (default: last 24 h) |
-| `claude-compress gain [--hours N]` | One-line savings summary (good for scripts) |
+| `claude-compress gain [--hours N]` | One-line savings summary — shown at end of each session via Stop hook |
+| `claude-compress stats [--hours N]` | Full savings breakdown (default: last 24 h) |
 | `claude-compress handoff emit` | Snapshot current session state to a handoff file |
 | `claude-compress handoff verify [ID]` | Check a handoff for drift against the live repo |
 | `claude-compress handoff resume [ID]` | Inject a handoff into `.claude/CLAUDE.md` |

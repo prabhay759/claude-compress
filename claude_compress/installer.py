@@ -35,6 +35,11 @@ _HOOKS_FRAGMENT = {
             "hooks": [{"type": "command", "command": "claude-compress resume"}],
         }
     ],
+    "Stop": [
+        {
+            "hooks": [{"type": "command", "command": "claude-compress gain"}]
+        }
+    ],
 }
 
 
