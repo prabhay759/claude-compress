@@ -162,14 +162,18 @@ def _cmd_compress(args) -> None:
     comp_tokens = store._estimate_tokens(result)
     store.log_compression(cmd_name, orig_tokens, comp_tokens)
 
-    if orig_tokens > comp_tokens:
-        pct = round((orig_tokens - comp_tokens) / orig_tokens * 100)
-        print(f"[claude-compress] {comp_tokens}/{orig_tokens} tokens ({pct}% reduction) [{cmd_name}]",
-              file=sys.stderr)
-
     sys.stdout.write(result)
     if result and not result.endswith("\n"):
         sys.stdout.write("\n")
+
+    if orig_tokens > comp_tokens:
+        pct = round((orig_tokens - comp_tokens) / orig_tokens * 100)
+        saved = orig_tokens - comp_tokens
+        label = f"[{cmd_name}]" if cmd_name else ""
+        sys.stdout.write(
+            f"[claude-compress: {pct}% reduction · {orig_tokens:,}→{comp_tokens:,} tokens"
+            f" · saved {saved:,}]{' ' + label if label else ''}\n"
+        )
 
 
 def _cmd_resume() -> None:
