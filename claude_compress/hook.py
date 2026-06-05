@@ -14,6 +14,7 @@ Claude Code hook JSON:
 """
 
 import json
+import os
 import shlex
 import sys
 from typing import Optional
@@ -94,7 +95,11 @@ def process_hook(raw_input: str, precompact: bool = False) -> str:
     # compress step — avoids Windows/Git-Bash permission errors with the
     # claude-compress script wrapper.
     base = _base_cmd(command)
-    python = shlex.quote(sys.executable)
+    # On Windows, sys.executable uses backslashes (e.g. C:\Users\...\python.exe).
+    # Git Bash treats backslashes as escape chars, corrupting the path silently.
+    # Forward slashes work on all platforms including Windows Git Bash.
+    python_exe = sys.executable.replace("\\", "/") if os.name == "nt" else sys.executable
+    python = shlex.quote(python_exe)
     rewritten = f"{command} 2>&1 | {python} -m claude_compress compress --cmd {base}"
 
     output = {
