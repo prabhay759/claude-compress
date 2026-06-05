@@ -86,6 +86,9 @@ def main() -> None:
     p_uninstall.add_argument("--global", dest="global_scope", action="store_true",
                               help="Remove from ~/.claude/settings.json")
 
+    # doctor
+    sub.add_parser("doctor", help="Verify the compression pipeline works end-to-end")
+
     args = parser.parse_args()
 
     if args.command == "init":
@@ -104,6 +107,8 @@ def main() -> None:
         _cmd_handoff(args)
     elif args.command == "uninstall":
         _cmd_uninstall(args)
+    elif args.command == "doctor":
+        _cmd_doctor()
 
 
 # ── Command implementations ───────────────────────────────────────────────
@@ -294,6 +299,67 @@ def _cmd_uninstall(args) -> None:
     scope = "global" if args.global_scope else "project"
     path = installer.uninstall(scope)
     print(f"[claude-compress] uninstalled ({scope}) from {path}")
+
+
+def _cmd_doctor() -> None:
+    import os, shlex, subprocess
+    from . import store, compressor
+
+    ok = True
+
+    # 1. Python executable
+    python_exe = sys.executable.replace("\\", "/") if os.name == "nt" else sys.executable
+    print(f"Python      : {python_exe}")
+
+    # 2. Can we import claude_compress?
+    try:
+        import claude_compress
+        print(f"Package     : claude_compress {claude_compress.__version__} ✓")
+    except ImportError as e:
+        print(f"Package     : MISSING — {e}")
+        ok = False
+
+    # 3. Pipe command that would be used
+    sample = "git status"
+    python_q = shlex.quote(python_exe)
+    pipe_cmd = f"{sample} 2>&1 | {python_q} -m claude_compress compress --cmd git"
+    print(f"Pipe cmd    : {pipe_cmd}")
+
+    # 4. Run the compress step directly on sample input
+    sample_text = "\n".join([f"line {i}" for i in range(30)] + ["error: something went wrong"] * 5)
+    try:
+        result = subprocess.run(
+            [python_exe, "-m", "claude_compress", "compress", "--cmd", "test"],
+            input=sample_text, capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0 and result.stdout:
+            print(f"Compress    : ✓ (output {len(result.stdout)} chars)")
+            if "claude-compress:" in result.stdout:
+                savings_line = [l for l in result.stdout.splitlines() if "claude-compress:" in l]
+                print(f"Savings line: {savings_line[0]}")
+            else:
+                print("Savings line: NOT FOUND in output — compression may not be reducing tokens")
+        else:
+            print(f"Compress    : FAILED (exit {result.returncode})")
+            if result.stderr:
+                print(f"  stderr: {result.stderr[:200]}")
+            ok = False
+    except Exception as e:
+        print(f"Compress    : ERROR — {e}")
+        ok = False
+
+    # 5. Session stats
+    s = store.compression_stats(since_hours=24)
+    print(f"Stats 24h   : {s['compressions']} compressions, {s['tokens_saved']:,} tokens saved")
+
+    print()
+    if ok:
+        print("✓ Pipeline looks healthy.")
+        if s["compressions"] == 0:
+            print("  No compressions recorded yet — run a command with verbose output")
+            print("  in Claude Code (e.g. 'git log --stat -5') to see savings.")
+    else:
+        print("✗ Issues found — see above.")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
