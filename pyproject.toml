@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-compress"
-version = "0.1.8"
+version = "0.1.9"
 description = "Context compression for Claude Code — reduces tokens via PreToolUse hooks"
 readme = "README.md"
 license = { text = "MIT" }

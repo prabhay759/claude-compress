@@ -176,8 +176,8 @@ def _cmd_compress(args) -> None:
         saved = orig_tokens - comp_tokens
         label = f"[{cmd_name}]" if cmd_name else ""
         sys.stdout.write(
-            f"[claude-compress: {pct}% reduction · {orig_tokens:,}→{comp_tokens:,} tokens"
-            f" · saved {saved:,}]{' ' + label if label else ''}\n"
+            f"[claude-compress: {pct}% reduction | {orig_tokens:,}->{comp_tokens:,} tokens"
+            f" | saved {saved:,}]{' ' + label if label else ''}\n"
         )
 
 
@@ -366,7 +366,7 @@ def _cmd_doctor() -> None:
 
 def _savings_bar(pct: float, width: int = 20) -> str:
     filled = round(pct / 100 * width)
-    return "[" + "█" * filled + "░" * (width - filled) + "]"
+    return "[" + "#" * filled + "-" * (width - filled) + "]"
 
 
 def _maybe_track_file(cmd: str, output: str) -> None:
