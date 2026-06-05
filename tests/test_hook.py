@@ -18,7 +18,7 @@ def rewritten_cmd(tool_name: str, command: str) -> str:
 def test_rewrites_bash_git_status():
     cmd = rewritten_cmd("Bash", "git status")
     assert "git status" in cmd
-    assert "claude-compress compress" in cmd
+    assert "claude_compress compress" in cmd
     assert "--cmd git" in cmd
 
 
@@ -35,17 +35,17 @@ def test_rewrites_stderr_redirect():
 
 def test_rewrites_case_insensitive_tool_name():
     cmd = rewritten_cmd("bash", "pwd")
-    assert "claude-compress compress" in cmd
+    assert "claude_compress compress" in cmd
 
 
 def test_rewrites_run_terminal_command():
     cmd = rewritten_cmd("run_terminal_command", "echo hello")
-    assert "claude-compress compress" in cmd
+    assert "claude_compress compress" in cmd
 
 
 def test_rewrites_execute_bash():
     cmd = rewritten_cmd("execute_bash", "cat README.md")
-    assert "claude-compress compress" in cmd
+    assert "claude_compress compress" in cmd
 
 
 # ── Should passthrough (return {}) ────────────────────────────────────────
@@ -177,4 +177,4 @@ def test_output_permission_decision_allow():
 def test_semicolon_inside_quotes_allowed():
     """A semicolon inside a quoted string is not a shell operator."""
     cmd = rewritten_cmd("Bash", "echo 'hello; world'")
-    assert "claude-compress compress" in cmd
+    assert "claude_compress compress" in cmd

@@ -14,6 +14,7 @@ Claude Code hook JSON:
 """
 
 import json
+import shlex
 import sys
 from typing import Optional
 
@@ -88,9 +89,13 @@ def process_hook(raw_input: str, precompact: bool = False) -> str:
         print(f"[claude-compress] skip ({skip_reason}): {command[:80]}", file=sys.stderr)
         return "{}"
 
-    # Rewrite: append pipe to compression
+    # Rewrite: append pipe to compression.
+    # Use sys.executable so the same Python that runs the hook handles the
+    # compress step — avoids Windows/Git-Bash permission errors with the
+    # claude-compress script wrapper.
     base = _base_cmd(command)
-    rewritten = f"{command} 2>&1 | claude-compress compress --cmd {base}"
+    python = shlex.quote(sys.executable)
+    rewritten = f"{command} 2>&1 | {python} -m claude_compress compress --cmd {base}"
 
     output = {
         "hookSpecificOutput": {
@@ -110,7 +115,7 @@ def _should_skip(command: str) -> Optional[str]:
     base = _base_cmd(cmd)
 
     # Already compressed — avoid double-wrapping
-    if "claude-compress compress" in cmd:
+    if "claude-compress compress" in cmd or "claude_compress compress" in cmd:
         return "already-compressed"
 
     # Self-invocation
