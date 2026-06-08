@@ -15,7 +15,7 @@ Pipeline (in order):
 import json
 import re
 import sys
-from typing import Optional
+from typing import List, Dict, Optional, Tuple
 
 from . import store
 
@@ -45,62 +45,112 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[mGKHF]|\x1b\][^\x07]*\x07|\x1b[()][AB012]"
 # ── Public API ────────────────────────────────────────────────────────────
 
 def compress(text: str, cmd: str = "") -> str:
+    """Compress `text` produced by `cmd`. Never raises — returns original on failure."""
+    return compress_explained(text, cmd)[0]
+
+
+def compress_explained(text: str, cmd: str = "") -> Tuple[str, List[Dict]]:
     """
-    Compress `text` produced by `cmd`.  Never raises — returns original on failure.
+    Compress text and return (compressed_text, techniques).
+
+    techniques is a list of {"name": str, "saved": int} dicts describing
+    what each pipeline step saved. Empty list means no compression occurred.
+    Never raises.
     """
     if not text or not text.strip():
-        return text
+        return text, []
     try:
-        return _compress_inner(text, cmd)
+        return _compress_tracked(text, cmd)
     except Exception as e:
         print(f"[claude-compress] fallback: {e}", file=sys.stderr)
-        return text
+        return text, []
 
 
 # ── Internal pipeline ─────────────────────────────────────────────────────
 
-def _compress_inner(text: str, cmd: str) -> str:
+def _compress_tracked(text: str, cmd: str) -> Tuple[str, List[Dict]]:
+    techniques: List[Dict] = []
+    current = text
+
+    def tok(s: str) -> int:
+        return store._estimate_tokens(s)
+
+    def record(name: str, before: str, after: str) -> str:
+        saved = tok(before) - tok(after)
+        if saved > 0:
+            techniques.append({"name": name, "saved": saved})
+        return after
+
     # 1. Hard byte limit (binary / enormous output)
-    if len(text.encode()) > MAX_BYTES:
-        lines = text.splitlines(keepends=True)
+    if len(current.encode()) > MAX_BYTES:
+        lines = current.splitlines(keepends=True)
         n = len(lines)
-        text = "".join(lines[:KEEP_HEAD]) + f"\n[... {n - KEEP_HEAD - KEEP_TAIL} lines truncated]\n" + "".join(lines[-KEEP_TAIL:])
+        truncated = (
+            "".join(lines[:KEEP_HEAD])
+            + f"\n[... {n - KEEP_HEAD - KEEP_TAIL} lines truncated]\n"
+            + "".join(lines[-KEEP_TAIL:])
+        )
+        current = record("truncate", current, truncated)
 
     # 2. ANSI strip
-    stripped = _ANSI_RE.sub("", text)
+    current = record("ansi", current, _ANSI_RE.sub("", current))
+    ansi_stripped = current  # reference point for dedup key and store threshold
 
-    # 3. Dedup check (use stripped content as the key)
-    ref = store.check_dedup(stripped)
+    # 3. Dedup check (use ANSI-stripped content as key)
+    ref = store.check_dedup(current)
     if ref:
-        return ref
+        techniques.append({"name": "dedup", "saved": tok(current) - tok(ref)})
+        return ref, techniques
 
     # 4. Secret detection → safe mode
-    safe_mode = bool(_SECRET_RE.search(stripped))
+    safe_mode = bool(_SECRET_RE.search(current))
 
-    # 5. Command-specific formatters
+    # 5. Command-specific formatter
     base_cmd = _base_cmd(cmd)
-    result = _apply_formatter(base_cmd, stripped)
+    fmt_name = _formatter_name(base_cmd)
+    current = record(fmt_name, current, _apply_formatter(base_cmd, current))
 
-    # 6. Generic passes
-    result = _collapse_blank_lines(result)
-    result = _collapse_repeated_lines(result)
+    # 6. Blank line collapse
+    current = record("blank", current, _collapse_blank_lines(current))
 
-    # 7. Truncate if still large
-    lines = result.splitlines()
+    # 7. RLE — repeated line collapse
+    current = record("rle", current, _collapse_repeated_lines(current))
+
+    # 8. Line truncation
+    lines = current.splitlines()
     if len(lines) > MAX_LINES:
         n = len(lines)
-        kept = lines[:KEEP_HEAD] + [f"[... {n - KEEP_HEAD - KEEP_TAIL} lines truncated]"] + lines[-KEEP_TAIL:]
-        result = "\n".join(kept)
+        kept = (
+            lines[:KEEP_HEAD]
+            + [f"[... {n - KEEP_HEAD - KEEP_TAIL} lines truncated]"]
+            + lines[-KEEP_TAIL:]
+        )
+        current = record("truncate", current, "\n".join(kept))
 
-    # 8. Only save to dedup cache if compression was beneficial and no secrets
-    if not safe_mode and len(result) < len(stripped):
-        store.store_compressed(stripped, result)
+    # 9. Store if beneficial and no secrets
+    if not safe_mode and len(current) < len(ansi_stripped):
+        store.store_compressed(ansi_stripped, current)
 
-    # 9. Annotate known-file refs
-    result = _apply_context_refs(result)
+    # 10. Annotate known-file refs
+    current = _apply_context_refs(current)
 
-    # 10. Return original if compression made it larger
-    return result if len(result) < len(stripped) else stripped
+    # 11. Return ANSI-stripped original if compression made no improvement
+    if len(current) >= len(ansi_stripped):
+        return ansi_stripped, []
+
+    return current, techniques
+
+
+def _formatter_name(base_cmd: str) -> str:
+    if base_cmd in ("git",):
+        return "git"
+    if base_cmd in ("cargo", "rustc"):
+        return "cargo"
+    if base_cmd in ("pytest", "python", "python3"):
+        return "pytest"
+    if base_cmd in ("npm", "yarn", "pnpm", "bun"):
+        return "node"
+    return "json"
 
 
 # ── ANSI & whitespace ─────────────────────────────────────────────────────
@@ -121,7 +171,7 @@ def _collapse_repeated_lines(text: str) -> str:
             j += 1
         count = j - i
         if count >= 3:
-            out.append(f"{stripped} (×{count})\n")
+            out.append(f"{stripped} (\xd7{count})\n")
         else:
             out.extend(lines[i:j])
         i = j

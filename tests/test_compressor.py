@@ -34,7 +34,7 @@ def test_compress_never_raises(monkeypatch):
     import claude_compress.compressor as c
     def boom(text, cmd=""):
         raise RuntimeError("injected failure")
-    monkeypatch.setattr(c, "_compress_inner", boom)
+    monkeypatch.setattr(c, "_compress_tracked", boom)
     text = "some output\n"
     assert compress(text, "git") == text
 

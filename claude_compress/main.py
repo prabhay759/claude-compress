@@ -39,6 +39,8 @@ def main() -> None:
     p_compress = sub.add_parser("compress", help="Compress stdin and print to stdout")
     p_compress.add_argument("--cmd", default="",
                             help="Base command name (e.g. git, cargo, pytest)")
+    p_compress.add_argument("--explain", action="store_true",
+                            help="Print per-technique breakdown to stderr")
 
     # resume
     sub.add_parser("resume", help="Re-activate dedup cache after context compaction")
@@ -52,6 +54,11 @@ def main() -> None:
     p_gain = sub.add_parser("gain", help="One-line token savings summary (good for scripts)")
     p_gain.add_argument("--hours", type=int, default=24,
                         help="Look-back window in hours (default: 24)")
+
+    # last
+    p_last = sub.add_parser("last", help="Show recent compressions with technique breakdown")
+    p_last.add_argument("--n", type=int, default=5,
+                        help="Number of recent compressions to show (default: 5)")
 
     # handoff (nested sub-subcommands)
     p_ho = sub.add_parser("handoff", help="Session handoff: emit, verify, resume, list, clear")
@@ -103,6 +110,8 @@ def main() -> None:
         _cmd_stats(args)
     elif args.command == "gain":
         _cmd_gain(args)
+    elif args.command == "last":
+        _cmd_last(args)
     elif args.command == "handoff":
         _cmd_handoff(args)
     elif args.command == "uninstall":
@@ -161,11 +170,11 @@ def _cmd_compress(args) -> None:
     cmd_full = os.environ.get("SQZ_CMD", cmd_name)
     _maybe_track_file(cmd_full, text)
 
-    result = compressor.compress(text, cmd_name)
+    result, techniques = compressor.compress_explained(text, cmd_name)
 
     orig_tokens = store._estimate_tokens(text)
     comp_tokens = store._estimate_tokens(result)
-    store.log_compression(cmd_name, orig_tokens, comp_tokens)
+    store.log_compression(cmd_name, orig_tokens, comp_tokens, techniques=techniques)
 
     sys.stdout.write(result)
     if result and not result.endswith("\n"):
@@ -175,10 +184,17 @@ def _cmd_compress(args) -> None:
         pct = round((orig_tokens - comp_tokens) / orig_tokens * 100)
         saved = orig_tokens - comp_tokens
         label = f"[{cmd_name}]" if cmd_name else ""
+        tags = "+".join(t["name"] for t in techniques) if techniques else ""
+        tag_str = f" | {tags}" if tags else ""
         sys.stdout.write(
             f"[claude-compress: {pct}% reduction | {orig_tokens:,}->{comp_tokens:,} tokens"
-            f" | saved {saved:,}]{' ' + label if label else ''}\n"
+            f" | saved {saved:,}{tag_str}]{' ' + label if label else ''}\n"
         )
+
+    if getattr(args, "explain", False) and techniques:
+        print("\n[explain]", file=sys.stderr)
+        for t in techniques:
+            print(f"  {t['name']:<12}: -{t['saved']:,} tokens", file=sys.stderr)
 
 
 def _cmd_resume() -> None:
@@ -292,6 +308,42 @@ def _print_frontmatter_summary(path) -> None:
     print(f"  tree    : {meta.get('working_tree','?')}")
     n = len(meta.get("files_touched", []))
     print(f"  files   : {n} touched")
+
+
+def _cmd_last(args) -> None:
+    from . import store
+    import time
+
+    records = store.last_compressions(n=args.n)
+    if not records:
+        print("No compressions recorded yet.")
+        return
+
+    print(f"\nLast {len(records)} compression(s):\n")
+    now = int(time.time())
+    for i, r in enumerate(records, 1):
+        orig = r["original_tokens"]
+        comp = r["compressed_tokens"]
+        saved = orig - comp
+        pct = round(saved / orig * 100) if orig > 0 else 0
+        cmd = r["cmd"] or "unknown"
+        age = _format_age(now - r["ts"])
+        techniques = r["techniques"]
+        tags = "+".join(t["name"] for t in techniques) if techniques else "none"
+        print(f"  #{i}  {cmd:<10} [{age}]  {pct}% | {orig:,}->{comp:,} tokens | saved {saved:,}  ({tags})")
+        for t in techniques:
+            print(f"       {t['name']:<12}: -{t['saved']:,} tokens")
+        print()
+
+
+def _format_age(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds}s ago"
+    if seconds < 3600:
+        return f"{seconds // 60}m ago"
+    if seconds < 86400:
+        return f"{seconds // 3600}h ago"
+    return f"{seconds // 86400}d ago"
 
 
 def _cmd_uninstall(args) -> None:

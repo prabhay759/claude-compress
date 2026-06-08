@@ -4,11 +4,12 @@ Database lives at ~/.claude-compress/cache.db.
 """
 
 import hashlib
+import json
 import os
 import sqlite3
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 
 
 def _db_path() -> Path:
@@ -42,6 +43,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             original_tokens INTEGER NOT NULL DEFAULT 0,
             compressed_tokens INTEGER NOT NULL DEFAULT 0,
             tags            TEXT,
+            techniques      TEXT DEFAULT '',
             ts              INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS known_files (
@@ -49,6 +51,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             added_at        INTEGER NOT NULL
         );
     """)
+    # Migrate existing DB: add techniques column if missing
+    try:
+        conn.execute("ALTER TABLE sessions ADD COLUMN techniques TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
     conn.commit()
 
 
@@ -114,19 +122,52 @@ def mark_all_fresh() -> None:
 # ── Session log ───────────────────────────────────────────────────────────
 
 def log_compression(cmd: str, original_tokens: int, compressed_tokens: int,
-                    tags: Optional[list] = None) -> None:
+                    tags: Optional[list] = None,
+                    techniques: Optional[List[Dict]] = None) -> None:
     project = _current_project()
     tag_str = ",".join(tags) if tags else ""
+    techniques_json = json.dumps(techniques) if techniques else ""
     try:
         with _connect() as conn:
             conn.execute(
-                """INSERT INTO sessions (project, cmd, original_tokens, compressed_tokens, tags, ts)
-                   VALUES (?,?,?,?,?,?)""",
-                (project, cmd, original_tokens, compressed_tokens, tag_str, int(time.time())),
+                """INSERT INTO sessions
+                   (project, cmd, original_tokens, compressed_tokens, tags, techniques, ts)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (project, cmd, original_tokens, compressed_tokens,
+                 tag_str, techniques_json, int(time.time())),
             )
             conn.commit()
     except Exception:
         pass
+
+
+def last_compressions(n: int = 5) -> List[Dict]:
+    """Return the last N compression records with technique breakdowns."""
+    try:
+        with _connect() as conn:
+            rows = conn.execute(
+                """SELECT cmd, original_tokens, compressed_tokens, techniques, ts
+                   FROM sessions ORDER BY ts DESC LIMIT ?""",
+                (n,),
+            ).fetchall()
+        result = []
+        for cmd, orig, comp, tech_json, ts in rows:
+            techniques = []
+            if tech_json:
+                try:
+                    techniques = json.loads(tech_json)
+                except Exception:
+                    pass
+            result.append({
+                "cmd": cmd or "",
+                "original_tokens": orig,
+                "compressed_tokens": comp,
+                "techniques": techniques,
+                "ts": ts,
+            })
+        return result
+    except Exception:
+        return []
 
 
 def compression_stats(since_hours: int = 24) -> dict:

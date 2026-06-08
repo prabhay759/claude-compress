@@ -129,8 +129,56 @@ After every compressed command you see a summary line at the bottom of the tool 
 ```
 git status output here...
 
-[claude-compress: 72% reduction · 354→99 tokens · saved 255] [git]
+[claude-compress: 72% reduction | 354->99 tokens | saved 255 | ansi+git+rle] [git]
 ```
+
+The tags at the end (`ansi+git+rle`) show which techniques fired for that command.
+
+### Technique breakdown
+
+To see a full per-technique breakdown of recent compressions:
+
+```sh
+claude-compress last
+```
+
+```
+Last 5 compression(s):
+
+  #1  git        [2m ago]   72% | 354->99 tokens | saved 255  (ansi+git+rle)
+       ansi        : -38 tokens
+       git         : -180 tokens
+       rle         : -25 tokens
+       blank       : -12 tokens
+
+  #2  cargo      [5m ago]   88% | 450->54 tokens | saved 396  (ansi+cargo)
+       ansi        : -12 tokens
+       cargo       : -350 tokens
+       rle         : -34 tokens
+
+  #3  pytest     [12m ago]  61% | 820->320 tokens | saved 500  (pytest+rle)
+       pytest      : -450 tokens
+       rle         : -50 tokens
+```
+
+```sh
+claude-compress last --n 10   # show last 10
+```
+
+**Technique names:**
+
+| Tag | What it means |
+|---|---|
+| `ansi` | ANSI color codes stripped |
+| `git` | Unchanged diff hunks folded |
+| `cargo` | Compiling lines collapsed |
+| `pytest` | Passing tests folded, failures kept |
+| `node` | npm install noise removed |
+| `json` | Null fields stripped, output minified |
+| `rle` | Repeated identical lines collapsed |
+| `blank` | Multiple blank lines collapsed |
+| `truncate` | Output truncated (head + tail kept) |
+| `dedup` | Identical content replaced with reference token |
 
 ### Session total
 
@@ -140,8 +188,8 @@ claude-compress stats
 
 ```
 claude-compress  —  last 24h
-  [████████████░░░░░░░░]  62% reduction
-  Tokens saved : 11,130  (18,340 → 7,210)
+  [############--------]  62% reduction
+  Tokens saved : 11,130  (18,340 -> 7,210)
   Compressions : 42
 ```
 
@@ -289,6 +337,7 @@ Complex one-liners and interactive sessions are always passed through unchanged.
 | `claude-compress resume` | Re-activate dedup cache after SessionStart/compact |
 | `claude-compress gain [--hours N]` | One-line savings summary — shown at end of each session via Stop hook |
 | `claude-compress stats [--hours N]` | Full savings breakdown (default: last 24 h) |
+| `claude-compress last [--n N]` | Per-technique breakdown of the last N compressions (default: 5) |
 | `claude-compress handoff emit` | Snapshot current session state to a handoff file |
 | `claude-compress handoff verify [ID]` | Check a handoff for drift against the live repo |
 | `claude-compress handoff resume [ID]` | Inject a handoff into `.claude/CLAUDE.md` |
